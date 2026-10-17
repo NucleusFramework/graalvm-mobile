@@ -19,7 +19,7 @@ cp="$out/lucene-core.jar:$out/lucene-analysis-common.jar"
 extra=()
 if [[ $target == android-* ]]; then
   # The C queries run once, their results kept in a cache (which native-image requires when cross-compiling)
-  extra=(-H:CCompilerPath="$kit/bin/android-cc" -EANDROID_NDK_HOME -H:+NewCAPCache -H:CAPCacheDir="$out/capcache")
+  extra=(-H:CCompilerPath="$kit/bin/android-cc" -EANDROID_NDK_HOME -H:-UseCAPCache -H:+NewCAPCache -H:CAPCacheDir="$out/capcache")
   [ -n "${ANDROID_SERIAL:-}" ] && extra+=(-EANDROID_SERIAL)
 fi
 # shellcheck disable=SC2046
