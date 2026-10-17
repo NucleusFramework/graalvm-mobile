@@ -133,10 +133,14 @@ jobs:
         if: always()
         with:
           name: ${{ matrix.asset }}
-          path: |
-            dist/*
-            smoke/svm_err_*.md
+          path: dist/*
           retention-days: 7
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: ${{ matrix.asset }}-errors
+          path: smoke/svm_err_*.md
+          if-no-files-found: ignore
 
   release:
     needs: [version, build]
