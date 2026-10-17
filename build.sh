@@ -58,7 +58,7 @@ case $target in
     # No foreign function ABI for Android in Substrate VM: the FFM API (unused on Android, where Lucene reads through NIO)
     # is left out
     flags="-Dsvm.targetName=Android -Dsvm.targetArch=$arch --libc=bionic -march=$march -H:-CheckToolchain -H:-ForeignAPISupport"
-    link='-ljvm -llibchelper -ljava -lnio -lnet -lzip -lextnet -ljimage -lverify -lmanagement_ext -lmanagement -lprefs -lglibc_compat -lz -llog -ldl -lm -static-libstdc++ -lc++abi'
+    link='-ljvm -llibchelper -lsvm_container -ljava -lnio -lnet -lzip -lextnet -ljimage -lverify -lmanagement_ext -lmanagement -lprefs -lglibc_compat -lz -llog -ldl -lm -lc++_static -lc++abi'
     ;;
   *) echo "Unknown target $target" >&2; exit 1 ;;
 esac
