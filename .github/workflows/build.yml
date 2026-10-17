@@ -133,7 +133,9 @@ jobs:
         if: always()
         with:
           name: ${{ matrix.asset }}
-          path: dist/*
+          path: |
+            dist/*
+            smoke/svm_err_*.md
           retention-days: 7
 
   release:

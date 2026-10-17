@@ -55,7 +55,9 @@ case $target in
       "$graal/bin/jar" --create --file "$kit/lib/graalvm-mobile-platform.jar" -C "$work/platform" .
       classpath=lib/graalvm-mobile-platform.jar
     fi
-    flags="-Dsvm.targetName=Android -Dsvm.targetArch=$arch --libc=bionic -march=$march -H:-CheckToolchain"
+    # No foreign function ABI for Android in Substrate VM: the FFM API (unused on Android, where Lucene reads through NIO)
+    # is left out
+    flags="-Dsvm.targetName=Android -Dsvm.targetArch=$arch --libc=bionic -march=$march -H:-CheckToolchain -H:-ForeignAPISupport"
     link='-ljvm -llibchelper -ljava -lnio -lnet -lzip -lextnet -ljimage -lverify -lmanagement_ext -lmanagement -lprefs -lglibc_compat -lz -llog -ldl -lm -static-libstdc++ -lc++abi'
     ;;
   *) echo "Unknown target $target" >&2; exit 1 ;;
