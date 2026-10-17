@@ -1,0 +1,151 @@
+name: Build
+
+# Follows GraalVM CE's releases (graalvm/graalvm-ce-builds): every day, and when the recipe changes, if its latest
+# release and this recipe have no release yet, builds the iOS and Android kits from it, smoke-tests them and publishes
+# them, in the same run, as graalvm-mobile-<graalvm version>b<java build>.<revision> (see README.md)
+on:
+  schedule:
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+    inputs:
+      graalvm:
+        description: GraalVM CE release tag to build (default its latest, e.g. graal-25.4.4.1.1)
+        required: false
+      force:
+        description: Build even if this release and recipe have a release
+        type: boolean
+        default: false
+  push:
+    branches: [mobile-runtime]
+    paths: [build.sh, ios/**, android/**, smoke/**, .github/workflows/build.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      graalvm: ${{ steps.version.outputs.graalvm }}
+      tag: ${{ steps.version.outputs.tag }}
+      suffix: ${{ steps.version.outputs.suffix }}
+      key: ${{ steps.version.outputs.key }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GRAALVM: ${{ inputs.graalvm }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          set -euo pipefail
+          upstream=graalvm/graalvm-ce-builds
+          graalvm=${GRAALVM:-$(gh api "repos/$upstream/releases/latest" --jq .tag_name)}
+          # Its version and Java build, from its release file (the Linux x64 archive's)
+          url=$(gh api "repos/$upstream/releases/tags/$graalvm" --jq '.assets[] | select(.name | endswith("_linux-x64_bin.tar.gz")) | .browser_download_url')
+          curl -sSfL "$url" | tar -xzf - --wildcards --no-anchored -O '*/release' > release
+          version=$(sed -n 's/^GRAALVM_VERSION="\(.*\)"$/\1/p' release)
+          javaBuild=$(sed -n 's/^JAVA_RUNTIME_VERSION=".*+\([0-9]*\).*"$/\1/p' release)
+
+          # A release per GraalVM release and recipe
+          recipe=$(git ls-files -s build.sh ios android smoke | git hash-object --stdin | cut -c1-12)
+          key="$graalvm, recipe $recipe"
+          releases=$(gh api "repos/$GITHUB_REPOSITORY/releases" --paginate --jq '.[] | [.tag_name, .body] | @tsv')
+          if [ "$FORCE" != "true" ] && echo "$releases" | grep -qF "$key"; then
+            echo "Already released: $key"
+            exit 0
+          fi
+          prefix="graalvm-mobile-${version}b$javaBuild."
+          revision=$(echo "$releases" | cut -f1 | sed -n "s/^$(echo "$prefix" | sed 's/[.+]/\\&/g')\([0-9]*\)$/\1/p" | sort -n | tail -1)
+          build="$javaBuild.$(( ${revision:-0} + 1 ))"
+          {
+            echo "graalvm=$graalvm"
+            echo "tag=graalvm-mobile-${version}b$build"
+            echo "suffix=$version|$build"
+            echo "key=$key"
+          } >> "$GITHUB_OUTPUT"
+          echo "Next: graalvm-mobile-${version}b$build ($key)"
+
+  # A kit per target, smoke-tested on its build host: in the iOS simulator; for Android, a static executable run on the
+  # Linux runner through qemu-user (the native image built on Linux: native-image compiles its host's Java classes)
+  build:
+    needs: version
+    if: needs.version.outputs.tag != ''
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: ios-simulator, asset: ios-simulator-aarch64, os: macos-15, source: macos-aarch64, host: macos-aarch64 }
+          - { target: ios-device, asset: ios-device-aarch64, os: macos-15, source: macos-aarch64, host: macos-aarch64 }
+          - { target: android-aarch64, asset: android-aarch64, os: ubuntu-latest, source: linux-aarch64, host: linux-x64 }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: recipe
+      - name: GraalVM CE
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GRAALVM: ${{ needs.version.outputs.graalvm }}
+        run: |
+          set -euo pipefail
+          fetch() { # <platform> <dir>: the release's GraalVM CE for <platform>, its home in <dir>/home
+            url=$(gh api "repos/graalvm/graalvm-ce-builds/releases/tags/$GRAALVM" --jq ".assets[] | select(.name | endswith(\"_$1_bin.tar.gz\")) | .browser_download_url")
+            mkdir -p "$2" && curl -sSfL "$url" | tar -xzf - -C "$2"
+            home=$(dirname "$(find "$2" -maxdepth 4 -name release | head -1)")
+            ln -s "$home" "$2/home"
+          }
+          fetch ${{ matrix.source }} source
+          [ "${{ matrix.host }}" = "${{ matrix.source }}" ] && ln -s "$PWD/source/home" host || { fetch ${{ matrix.host }} hostdir; ln -s "$PWD/hostdir/home" host; }
+      - name: Android NDK and qemu
+        if: startsWith(matrix.target, 'android')
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;27.2.12479018" > /dev/null
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+          sudo apt-get update -q && sudo apt-get install -yq qemu-user-static binfmt-support
+      - name: Kit
+        env:
+          SUFFIX: ${{ needs.version.outputs.suffix }}
+        run: |
+          # graalvm-mobile-<version>-<platform>-<arch>-b<build>, as jdk-mobile names its archives
+          asset="graalvm-mobile-${SUFFIX%%|*}-${{ matrix.asset }}-b${SUFFIX##*|}"
+          recipe/build.sh ${{ matrix.target }} source/home dist "$asset"
+          mkdir kit && tar -xzf "dist/$asset.tar.gz" -C kit
+      - name: Smoke test
+        run: |
+          set -euo pipefail
+          recipe/smoke/smoke.sh kit host smoke
+          mkdir -p smoke/run
+          case ${{ matrix.target }} in
+            ios-simulator)
+              udid=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; print(next(d["udid"] for r,ds in json.load(sys.stdin)["devices"].items() if "iOS" in r for d in ds if "iPhone" in d["name"]))')
+              xcrun simctl boot "$udid"
+              xcrun simctl spawn "$udid" "$PWD/smoke/smoke" "$PWD/smoke/run" | tee smoke.out ;;
+            ios-device) file smoke/smoke; otool -l smoke/smoke | grep -A3 LC_BUILD_VERSION > smoke.out; grep -q "platform 2" smoke.out && echo "smoke ok" >> smoke.out ;;
+            android-aarch64) file smoke/smoke; qemu-aarch64-static smoke/smoke "$PWD/smoke/run" | tee smoke.out ;;
+          esac
+          grep -q "smoke ok" smoke.out
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ${{ matrix.asset }}
+          path: dist/*
+          retention-days: 7
+
+  release:
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.tag }}
+          KEY: ${{ needs.version.outputs.key }}
+        run: |
+          gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "$TAG" \
+            --notes "GraalVM CE's static libraries for native images on iOS and Android: $KEY."

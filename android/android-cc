@@ -1,0 +1,33 @@
+#!/bin/bash
+# native-image's C compiler for an Android target (-H:CCompilerPath, with -H:-CheckToolchain): the NDK's clang. The
+# programs native-image compiles to query the C headers are linked statically, so they run on the build host: natively
+# on arm64 Linux, through qemu-user (binfmt) elsewhere on Linux. On other hosts (macOS), with ANDROID_SERIAL set, they
+# run on that device through adb (pass -EANDROID_SERIAL to native-image).
+set -u
+ndk=${ANDROID_NDK_HOME:-${ANDROID_NDK:-}}
+[ -n "$ndk" ] || { echo "android-cc: set ANDROID_NDK_HOME" >&2; exit 1; }
+cc=("$ndk"/toolchains/llvm/prebuilt/*/bin/clang)
+cc=("${cc[0]}" --target=aarch64-linux-android${ANDROID_API:-29})
+out=""; prev=""; args=()
+for a in "$@"; do
+  if [ "$prev" = "-o" ]; then out=$a; fi
+  args+=("$a"); prev=$a
+done
+# Version probes, objects: as is
+if [ -z "$out" ] || [[ "$out" == *.o ]] || [[ " $* " == *" -c "* ]]; then exec "${cc[@]}" "$@"; fi
+if [ "$(uname -s)" = Linux ] || [ -z "${ANDROID_SERIAL:-}" ]; then exec "${cc[@]}" -static "$@"; fi
+# Through adb: the program is <out>.bin, <out> a script running it on the device
+args=(); prev=""
+for a in "$@"; do
+  if [ "$prev" = "-o" ]; then args+=("$a.bin"); else args+=("$a"); fi
+  prev=$a
+done
+"${cc[@]}" -static "${args[@]}" || exit $?
+name=graalvm-mobile-query-$(basename "$out")
+adb=${ADB:-adb}
+cat > "$out" <<SCRIPT
+#!/bin/sh
+"$adb" -s "$ANDROID_SERIAL" push "$out.bin" /data/local/tmp/$name >/dev/null 2>&1 || exit 1
+"$adb" -s "$ANDROID_SERIAL" shell /data/local/tmp/$name | tr -d '\r'
+SCRIPT
+chmod +x "$out"
