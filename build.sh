@@ -43,7 +43,7 @@ case $target in
     "$ndk"/toolchains/llvm/prebuilt/*/bin/llvm-ar rcs "$kit/lib/libglibc_compat.a" "$work/glibc_compat.o"
     mkdir -p "$kit/bin"; cp "$recipe/android/android-cc" "$kit/bin/"
     platformClass=ANDROID_AARCH64
-    flags='-Dsvm.targetName=Android -Dsvm.targetArch=aarch64 --libc=bionic -H:-CheckToolchain'
+    flags='-Dsvm.targetName=Android -Dsvm.targetArch=aarch64 --libc=bionic -march=armv8-a -H:-CheckToolchain'
     link='-ljvm -llibchelper -ljava -lnio -lnet -lzip -lextnet -ljimage -lverify -lmanagement_ext -lmanagement -lprefs -lglibc_compat -lz -llog -ldl -lm -static-libstdc++ -lc++abi'
     ;;
   *) echo "Unknown target $target" >&2; exit 1 ;;
