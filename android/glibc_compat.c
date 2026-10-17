@@ -9,9 +9,6 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-// A native image linked here is never a static executable
-int __svm_vm_is_static_binary = 0;
-
 int *__errno_location(void) { return __errno(); }
 
 int __xstat(int ver, const char *path, struct stat *buf) { (void)ver; return stat(path, buf); }
