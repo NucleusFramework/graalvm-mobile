@@ -93,7 +93,7 @@ jobs:
           fetch() { # <platform> <dir>: the release's GraalVM CE for <platform>, its home in <dir>/home
             url=$(gh api "repos/graalvm/graalvm-ce-builds/releases/tags/$GRAALVM" --jq ".assets[] | select(.name | endswith(\"_$1_bin.tar.gz\")) | .browser_download_url")
             mkdir -p "$2" && curl -sSfL "$url" | tar -xzf - -C "$2"
-            home=$(dirname "$(find "$2" -maxdepth 4 -name release | head -1)")
+            home=$(cd "$(dirname "$(find "$2" -maxdepth 4 -name release | head -1)")" && pwd)
             ln -s "$home" "$2/home"
           }
           fetch ${{ matrix.source }} source
@@ -107,6 +107,7 @@ jobs:
       - name: Kit
         env:
           SUFFIX: ${{ needs.version.outputs.suffix }}
+          GRAALVM_TAG: ${{ needs.version.outputs.graalvm }}
         run: |
           # graalvm-mobile-<version>-<platform>-<arch>-b<build>, as jdk-mobile names its archives
           asset="graalvm-mobile-${SUFFIX%%|*}-${{ matrix.asset }}-b${SUFFIX##*|}"

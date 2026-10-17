@@ -53,7 +53,8 @@ mkdir -p "$kit/include"; cp "$graal"/lib/svm/clibraries/include/*.h "$kit/includ
 release=$(sed -n 's/^GRAALVM_VERSION="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' "$graal/release" | head -1)
 java=$(sed -n 's/^JAVA_VERSION="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' "$graal/release" | head -1)
 cat > "$kit/graalvm-mobile.properties" <<PROPS
-# The GraalVM CE these libraries come from: native-image must be that release's
+# The GraalVM CE these libraries come from (its graalvm/graalvm-ce-builds release): native-image must be that release's
+graalvm.tag=${GRAALVM_TAG:-}
 graalvm.version=$release
 java.version=$java
 target=$target
