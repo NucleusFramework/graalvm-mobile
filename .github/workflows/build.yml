@@ -78,6 +78,7 @@ jobs:
           - { target: ios-simulator, asset: ios-simulator-aarch64, os: macos-15, source: macos-aarch64, host: macos-aarch64 }
           - { target: ios-device, asset: ios-device-aarch64, os: macos-15, source: macos-aarch64, host: macos-aarch64 }
           - { target: android-aarch64, asset: android-aarch64, os: ubuntu-latest, source: linux-aarch64, host: linux-x64 }
+          - { target: android-x64, asset: android-x64, os: ubuntu-latest, source: linux-x64, host: linux-x64 }
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     steps:
@@ -125,6 +126,7 @@ jobs:
               xcrun simctl spawn "$udid" "$PWD/smoke/smoke" "$PWD/smoke/run" | tee smoke.out ;;
             ios-device) file smoke/smoke; otool -l smoke/smoke | grep -A3 LC_BUILD_VERSION > smoke.out; grep -q "platform 2" smoke.out && echo "smoke ok" >> smoke.out ;;
             android-aarch64) file smoke/smoke; qemu-aarch64-static smoke/smoke "$PWD/smoke/run" | tee smoke.out ;;
+            android-x64) file smoke/smoke; smoke/smoke "$PWD/smoke/run" | tee smoke.out ;;
           esac
           grep -q "smoke ok" smoke.out
       - uses: actions/upload-artifact@v4

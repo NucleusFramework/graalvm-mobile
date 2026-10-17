@@ -6,8 +6,9 @@
 # (<graalvm-home>, the one for the target's architecture and kernel: macOS aarch64 for iOS, Linux aarch64 for Android).
 #   ios-simulator, ios-device: the macOS aarch64 libraries labeled for iOS (same ABI, same SDK headers; the objects
 #                              only carry their platform in their build version)
-#   android-aarch64:           the Linux aarch64 (glibc) libraries, with libglibc_compat.a for bionic, and android-cc,
-#                              native-image's C compiler for Android
+#   android-aarch64,           the Linux (glibc) libraries of the architecture, with libglibc_compat.a for bionic, and
+#   android-x64:               android-cc, native-image's C compiler for Android; for x64, graalvm-mobile-platform.jar
+#                              (GraalVM declares no Android x64 platform)
 # Writes <out-dir>/<asset>.tar.gz and its .sha256.
 set -euo pipefail
 target=$1; graal=$(cd "$2" && pwd); out=$3; asset=$4
@@ -16,6 +17,7 @@ mkdir -p "$out"; out=$(cd "$out" && pwd)
 kit=$(mktemp -d)/$asset
 mkdir -p "$kit/lib"
 
+classpath=""
 # The JDK's libraries an image may link (the desktop's AWT, sound... aren't)
 jdk_libs="java nio net zip extnet jimage verify management management_ext prefs syslookup"
 
@@ -29,21 +31,31 @@ case $target in
     [ "$target" = ios-simulator ] && platform=7 || platform=2
     for lib in "$graal"/lib/svm/clibraries/darwin-aarch64/*.a; do relabel $platform "$lib" "$kit/lib/$(basename "$lib")"; done
     for name in $jdk_libs; do relabel $platform "$graal/lib/static/darwin-aarch64/lib$name.a" "$kit/lib/lib$name.a"; done
-    platformClass=IOS_AARCH64
+    platformClass=org.graalvm.nativeimage.Platform\$IOS_AARCH64
     flags='-Dsvm.targetName=iOS -Dsvm.targetArch=arm64 -H:PageSize=16384'
     link='-ljvm -llibchelper -ldarwin -ljava -lnio -lnet -lzip -lextnet -ljimage -lverify -lmanagement_ext -lmanagement -lprefs -framework Foundation -framework CoreFoundation -lz -lc++'
     ;;
-  android-aarch64)
-    cp "$graal"/lib/svm/clibraries/linux-aarch64/glibc/*.a "$kit/lib/"
-    for name in $jdk_libs; do cp "$graal/lib/static/linux-aarch64/glibc/lib$name.a" "$kit/lib/"; done
+  android-aarch64|android-x64)
+    if [ "$target" = android-aarch64 ]; then
+      arch=aarch64; triple=aarch64-linux-android; platformClass=org.graalvm.nativeimage.Platform\$ANDROID_AARCH64; march=armv8-a
+    else
+      arch=amd64; triple=x86_64-linux-android; platformClass=graalvm.mobile.ANDROID_AMD64; march=x86-64-v2
+    fi
+    cp "$graal"/lib/svm/clibraries/linux-$arch/glibc/*.a "$kit/lib/"
+    for name in $jdk_libs; do cp "$graal/lib/static/linux-$arch/glibc/lib$name.a" "$kit/lib/"; done
     ndk=${ANDROID_NDK_HOME:?set ANDROID_NDK_HOME}
     cc=("$ndk"/toolchains/llvm/prebuilt/*/bin/clang)
     work=$(mktemp -d)
-    "${cc[0]}" --target=aarch64-linux-android29 -O2 -fPIC -c -o "$work/glibc_compat.o" "$recipe/android/glibc_compat.c"
+    "${cc[0]}" --target=${triple}29 -O2 -fPIC -c -o "$work/glibc_compat.o" "$recipe/android/glibc_compat.c"
     "$ndk"/toolchains/llvm/prebuilt/*/bin/llvm-ar rcs "$kit/lib/libglibc_compat.a" "$work/glibc_compat.o"
-    mkdir -p "$kit/bin"; cp "$recipe/android/android-cc" "$kit/bin/"
-    platformClass=ANDROID_AARCH64
-    flags='-Dsvm.targetName=Android -Dsvm.targetArch=aarch64 --libc=bionic -march=armv8-a -H:-CheckToolchain'
+    mkdir -p "$kit/bin"
+    sed "s/@TRIPLE@/$triple/" "$recipe/android/android-cc" > "$kit/bin/android-cc"; chmod +x "$kit/bin/android-cc"
+    if [ "$arch" = amd64 ]; then
+      "$graal/bin/javac" -d "$work/platform" "$recipe/android/platform/graalvm/mobile/ANDROID_AMD64.java"
+      "$graal/bin/jar" --create --file "$kit/lib/graalvm-mobile-platform.jar" -C "$work/platform" .
+      classpath=lib/graalvm-mobile-platform.jar
+    fi
+    flags="-Dsvm.targetName=Android -Dsvm.targetArch=$arch --libc=bionic -march=$march -H:-CheckToolchain"
     link='-ljvm -llibchelper -ljava -lnio -lnet -lzip -lextnet -ljimage -lverify -lmanagement_ext -lmanagement -lprefs -lglibc_compat -lz -llog -ldl -lm -static-libstdc++ -lc++abi'
     ;;
   *) echo "Unknown target $target" >&2; exit 1 ;;
@@ -59,8 +71,10 @@ graalvm.version=$release
 java.version=$java
 target=$target
 # native-image's options for this target (with -H:+SharedLibrary -H:+ExitAfterRelocatableImageWrite: a relocatable object)
-native-image.platform=org.graalvm.nativeimage.Platform\$$platformClass
+native-image.platform=$platformClass
 native-image.flags=$flags
+# Added to native-image's class path (relative to the kit)
+native-image.classpath=$classpath
 # The object's link, with -L<kit>/lib
 link.flags=$link
 PROPS

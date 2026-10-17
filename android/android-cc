@@ -1,13 +1,13 @@
 #!/bin/bash
 # native-image's C compiler for an Android target (-H:CCompilerPath, with -H:-CheckToolchain): the NDK's clang. The
 # programs native-image compiles to query the C headers are linked statically, so they run on the build host: natively
-# on arm64 Linux, through qemu-user (binfmt) elsewhere on Linux. On other hosts (macOS), with ANDROID_SERIAL set, they
+# on Linux of the same architecture, through qemu-user (binfmt) on another. On other hosts (macOS), with ANDROID_SERIAL set, they
 # run on that device through adb (pass -EANDROID_SERIAL to native-image).
 set -u
 ndk=${ANDROID_NDK_HOME:-${ANDROID_NDK:-}}
 [ -n "$ndk" ] || { echo "android-cc: set ANDROID_NDK_HOME" >&2; exit 1; }
 cc=("$ndk"/toolchains/llvm/prebuilt/*/bin/clang)
-cc=("${cc[0]}" --target=aarch64-linux-android${ANDROID_API:-29})
+cc=("${cc[0]}" --target=@TRIPLE@${ANDROID_API:-29})
 out=""; prev=""; args=()
 for a in "$@"; do
   if [ "$prev" = "-o" ]; then out=$a; fi
