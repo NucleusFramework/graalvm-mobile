@@ -80,6 +80,11 @@ native-image.classpath=$classpath
 # The object's link, with -L<kit>/lib
 link.flags=$link
 PROPS
+# The licences: the recipe's (MIT, libglibc_compat.a and android-cc), GraalVM CE's and the JDK's (GPLv2 with the
+# Classpath Exception, the libraries)
+cp "$recipe/LICENSE" "$kit/LICENSE-graalvm-mobile"
+cp "$graal"/LICENSE.txt "$graal"/LICENSE_NATIVEIMAGE.txt "$graal"/THIRD_PARTY_LICENSE.txt "$kit/"
+cp -RL "$graal/legal" "$kit/legal"
 tar -C "$kit" -czf "$out/$asset.tar.gz" .
 (cd "$out" && shasum -a 256 "$asset.tar.gz" > "$asset.tar.gz.sha256")
 echo "$out/$asset.tar.gz"

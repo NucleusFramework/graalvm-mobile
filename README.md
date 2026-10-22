@@ -35,6 +35,9 @@ GraalVM 23; the kits do it for the current GraalVM CE.
 - `graalvm-mobile.properties`: the GraalVM release it is for, native-image's options for the target
   (`native-image.platform`, `native-image.flags`, `native-image.classpath`) and the object's link (`link.flags`, with `-L<kit>/lib`);
 - `bin/android-cc` (Android).
+- the licences: `LICENSE-graalvm-mobile` (this recipe's, MIT: `libglibc_compat.a`, `bin/android-cc`,
+  `graalvm-mobile-platform.jar`), and GraalVM CE's `LICENSE.txt`, `LICENSE_NATIVEIMAGE.txt`, `THIRD_PARTY_LICENSE.txt`
+  and `legal/` for its and the JDK's libraries (GPLv2 with the Classpath Exception).
 
 ## Building and testing
 
@@ -45,3 +48,8 @@ smoke/smoke.sh <kit> <the build host's GraalVM CE home> <out-dir>   # builds smo
 
 The smoke test (the JDK's files, threads and time zones, a Lucene index with phrase, point and KNN queries) runs in the
 CI in the iOS simulator and, for Android, as a static executable on the Linux runner (through qemu-user for arm64).
+
+## License
+
+This recipe is under the [MIT License](LICENSE). The libraries a kit redistributes are GraalVM CE's and the JDK's,
+under their own licences (GPLv2 with the Classpath Exception), which each kit ships.
