@@ -18,6 +18,9 @@ on:
   push:
     branches: [mobile-runtime]
     paths: [build.sh, ios/**, android/**, smoke/**, .github/workflows/build.yml]
+  # A change to the recipe: its kits built and smoke-tested, not released
+  pull_request:
+    paths: [build.sh, ios/**, android/**, smoke/**, .github/workflows/build.yml]
 
 permissions:
   contents: write
@@ -51,7 +54,7 @@ jobs:
           recipe=$(git ls-files -s build.sh ios android smoke | git hash-object --stdin | cut -c1-12)
           key="$graalvm, recipe $recipe"
           releases=$(gh api "repos/$GITHUB_REPOSITORY/releases" --paginate --jq '.[] | [.tag_name, .body] | @tsv')
-          if [ "$FORCE" != "true" ] && echo "$releases" | grep -qF "$key"; then
+          if [ "$FORCE" != "true" ] && [ "$GITHUB_EVENT_NAME" != "pull_request" ] && echo "$releases" | grep -qF "$key"; then
             echo "Already released: $key"
             exit 0
           fi
@@ -104,7 +107,11 @@ jobs:
         run: |
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;27.2.12479018" > /dev/null
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
-          sudo apt-get update -q && sudo apt-get install -yq qemu-user-static binfmt-support
+          # (qemu-user-static until Ubuntu 25.10; qemu-user-binfmt from 26.04, whose qemu-user is static)
+          sudo apt-get update -q
+          sudo apt-get install -yq qemu-user-static binfmt-support || sudo apt-get install -yq qemu-user-binfmt
+          qemu=$(command -v qemu-aarch64-static || command -v qemu-aarch64)
+          echo "QEMU_AARCH64=$qemu" >> "$GITHUB_ENV"
       - name: Kit
         env:
           SUFFIX: ${{ needs.version.outputs.suffix }}
@@ -125,8 +132,12 @@ jobs:
               xcrun simctl boot "$udid"
               xcrun simctl spawn "$udid" "$PWD/smoke/smoke" "$PWD/smoke/run" | tee smoke.out ;;
             ios-device) file smoke/smoke; otool -l smoke/smoke | grep -A3 LC_BUILD_VERSION > smoke.out; grep -q "platform 2" smoke.out && echo "smoke ok" >> smoke.out ;;
-            android-aarch64) file smoke/smoke; qemu-aarch64-static smoke/smoke "$PWD/smoke/run" | tee smoke.out ;;
-            android-x64) file smoke/smoke; smoke/smoke "$PWD/smoke/run" | tee smoke.out ;;
+            android-aarch64)
+              file smoke/smoke; "$QEMU_AARCH64" smoke/smoke "$PWD/smoke/run" | tee smoke.out
+              "$QEMU_AARCH64" smoke/resolver | tee resolver.out; grep -q "resolver ok" resolver.out ;;
+            android-x64)
+              file smoke/smoke; smoke/smoke "$PWD/smoke/run" | tee smoke.out
+              smoke/resolver | tee resolver.out; grep -q "resolver ok" resolver.out ;;
           esac
           grep -q "smoke ok" smoke.out
       - uses: actions/upload-artifact@v4
@@ -144,6 +155,7 @@ jobs:
 
   release:
     needs: [version, build]
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4

@@ -46,4 +46,9 @@ flags=$(prop link.flags)
 [[ $target == android-* ]] && flags=${flags//-llog/}
 # shellcheck disable=SC2086
 "${cc[@]}" -I"$out" -o "$out/smoke" "$smoke/main.c" "$object" -L"$kit/lib" $flags
+# Android: the resolver's translation (glibc's struct addrinfo on bionic), with the kit's own link flags
+if [[ $target == android-* ]]; then
+  # shellcheck disable=SC2086
+  "${cc[@]}" -o "$out/resolver" "$smoke/resolver.c" -L"$kit/lib" $flags
+fi
 echo "$out/smoke"
