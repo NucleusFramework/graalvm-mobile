@@ -24,6 +24,15 @@ GraalVM 23; the kits do it for the current GraalVM CE.
   `-H:CCompilerPath`) into static programs run on the host (through qemu-user on x64), or, with `ANDROID_SERIAL` set,
   on that device through adb. GraalVM declares no Android x86_64 platform: the kit brings one
   (`graalvm.mobile.ANDROID_AMD64`, in `lib/graalvm-mobile-platform.jar`, for native-image's class path).
+- Android: GraalVM's Linux libraries are built against glibc. `libglibc_compat.a` provides the glibc-only symbols
+  they reference, and translates the resolver's calls (`getaddrinfo`, `freeaddrinfo`, `getnameinfo`, `gai_strerror`):
+  bionic's `struct addrinfo` swaps `ai_addr` and `ai_canonname`, and its `AI_*`, `NI_*` and `EAI_*` values are BSD's.
+  The link must wrap them (`-Wl,--wrap=<name>`, in `link.flags`): without that, any `InetAddress` lookup crashes. The
+  wrappers are an archive member of their own, left out of links that don't wrap.
+- Android below API 28: `libjava`'s `ProcessImpl` references `posix_spawn` (bionic's from API 28): an app targeting
+  API 26 or 27 provides a stub (returning `ENOSYS`, or calling `dlsym(RTLD_DEFAULT, "posix_spawn")`).
+- `StackValue` (`org.graalvm.nativeimage.StackValue`) throws on a virtual thread: in code virtual threads may run,
+  pass native memory through pinned arrays (`PinnedObject`) or `UnmanagedMemory` instead.
 
 ## Releases
 

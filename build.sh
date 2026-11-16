@@ -46,8 +46,10 @@ case $target in
     ndk=${ANDROID_NDK_HOME:?set ANDROID_NDK_HOME}
     cc=("$ndk"/toolchains/llvm/prebuilt/*/bin/clang)
     work=$(mktemp -d)
-    "${cc[0]}" --target=${triple}29 -O2 -fPIC -c -o "$work/glibc_compat.o" "$recipe/android/glibc_compat.c"
-    "$ndk"/toolchains/llvm/prebuilt/*/bin/llvm-ar rcs "$kit/lib/libglibc_compat.a" "$work/glibc_compat.o"
+    for source in glibc_compat resolver_compat; do
+      "${cc[0]}" --target=${triple}29 -O2 -fPIC -c -o "$work/$source.o" "$recipe/android/$source.c"
+    done
+    "$ndk"/toolchains/llvm/prebuilt/*/bin/llvm-ar rcs "$kit/lib/libglibc_compat.a" "$work/glibc_compat.o" "$work/resolver_compat.o"
     mkdir -p "$kit/bin"
     sed "s/@TRIPLE@/$triple/" "$recipe/android/android-cc" > "$kit/bin/android-cc"; chmod +x "$kit/bin/android-cc"
     if [ "$arch" = amd64 ]; then
@@ -58,7 +60,9 @@ case $target in
     # No foreign function ABI for Android in Substrate VM: the FFM API (unused on Android, where Lucene reads through NIO)
     # is left out
     flags="-Dsvm.targetName=Android -Dsvm.targetArch=$arch --libc=bionic -march=$march -H:-CheckToolchain -H:-ForeignAPISupport"
-    link='-ljvm -llibchelper -lsvm_container -ljava -lnio -lnet -lzip -lextnet -ljimage -lverify -lmanagement_ext -lmanagement -lprefs -lglibc_compat -lz -llog -ldl -lm -lc++_static -lc++abi'
+    # The resolver's calls go through resolver_compat.c's wrappers: bionic's struct addrinfo and constants aren't glibc's
+    wrap='-Wl,--wrap=getaddrinfo -Wl,--wrap=freeaddrinfo -Wl,--wrap=getnameinfo -Wl,--wrap=gai_strerror'
+    link="-ljvm -llibchelper -lsvm_container -ljava -lnio -lnet -lzip -lextnet -ljimage -lverify -lmanagement_ext -lmanagement -lprefs -lglibc_compat -lz -llog -ldl -lm -lc++_static -lc++abi $wrap"
     ;;
   *) echo "Unknown target $target" >&2; exit 1 ;;
 esac
